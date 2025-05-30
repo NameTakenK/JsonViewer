@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>🌈 JSON Viewer</title>
+  <link href="https://cdn.jsdelivr.net/npm/jsoneditor@9.10.0/dist/jsoneditor.min.css" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f9fafb;
+      --text: #111;
+      --panel: #ffffffcc;
+      --border: #ccc;
+      --highlight-key: #ff6b81;
+      --highlight-string: #1e90ff;
+      --highlight-number: #10b981;
+      --highlight-boolean: #f59e0b;
+      --highlight-null: #6b7280;
+    }
+    body.dark {
+      --bg: #1f2937;
+      --text: #f3f4f6;
+      --panel: #374151cc;
+      --border: #4b5563;
+      --highlight-key: #f472b6;
+      --highlight-string: #60a5fa;
+      --highlight-number: #34d399;
+      --highlight-boolean: #fbbf24;
+      --highlight-null: #9ca3af;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+      font-family: 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      transition: background 0.3s, color 0.3s;
+    }
+
+    #editor {
+      width: 50%;
+      padding: 1em;
+      font-family: monospace;
+      font-size: 14px;
+      border: none;
+      resize: none;
+      outline: none;
+      background: var(--panel);
+      color: var(--text);
+      backdrop-filter: blur(8px);
+      border-right: 1px solid var(--border);
+    }
+
+    .resizer {
+      width: 5px;
+      background: var(--border);
+      cursor: col-resize;
+      height: 100%;
+    }
+
+    .viewer {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+    }
+
+    .tabs {
+      display: flex;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .tab {
+      padding: 10px 20px;
+      cursor: pointer;
+      border-bottom: 3px solid transparent;
+      font-weight: 500;
+    }
+
+    .tab.active {
+      border-bottom: 3px solid var(--text);
+      font-weight: bold;
+    }
+
+    .error {
+      color: red;
+      font-weight: bold;
+      padding: 0.5em;
+      background: #ffecec;
+      display: none;
+    }
+
+    .view-content {
+      flex: 1;
+      overflow: auto;
+      padding: 1em;
+      display: none;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+
+    .json-highlight .key     { color: var(--highlight-key); }
+    .json-highlight .string  { color: var(--highlight-string); }
+    .json-highlight .number  { color: var(--highlight-number); }
+    .json-highlight .boolean { color: var(--highlight-boolean); }
+    .json-highlight .null    { color: var(--highlight-null); }
+
+    .theme-toggle {
+      margin-left: auto;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 1.2em;
+    }
+
+    .tabs .tab:hover {
+      background-color: #e5e7eb22;
+    }
+  </style>
+</head>
+<body>
+  <textarea id="editor">{ "name": "John", "age": 30, "admin": true, "skills": null }</textarea>
+  <div class="resizer" id="resizer"></div>
+  <div class="viewer">
+    <div class="tabs">
+      <div class="tab active" data-tab="tree">🌳 Tree</div>
+      <div class="tab" data-tab="raw">📄 Raw</div>
+      <div class="theme-toggle" id="themeToggle">🌓</div>
+    </div>
+    <div class="error" id="errorBox"></div>
+    <div class="view-content" id="treeView"></div>
+    <div class="view-content json-highlight" id="rawView"></div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/jsoneditor@9.10.0/dist/jsoneditor.min.js"></script>
+  <script>
+    const editor = document.getElementById('editor');
+    const errorBox = document.getElementById('errorBox');
+    const treeView = document.getElementById('treeView');
+    const rawView = document.getElementById('rawView');
+    const tabs = document.querySelectorAll('.tab');
+    const views = { tree: treeView, raw: rawView };
+    const themeToggle = document.getElementById('themeToggle');
+    const jsonEditor = new JSONEditor(treeView, {
+      mode: 'tree',
+      mainMenuBar: false
+    });
+
+    function escapeHtml(str) {
+  return str.replace(/[&<>'"]/g, tag => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[tag]));
+}
+
+function highlightJSON(json) {
+  if (json.length > 20000) {
+    return '<span style="color:gray;">(Raw too large to highlight)</span>\n' + escapeHtml(json);
+  }
+
+  const escaped = escapeHtml(json);
+  return escaped
+    .replace(/&quot;(.*?)&quot;(?=\s*:)/g, '<span class="key">"&nbsp;$1&nbsp;"</span>')   // key
+    .replace(/&quot;(.*?)&quot;/g, '<span class="string">"&nbsp;$1&nbsp;"</span>')      // string
+    .replace(/\b(-?\d+(\.\d+)?([eE][+-]?\d+)?)\b/g, '<span class="number">$1</span>')    // number
+    .replace(/\b(true|false)\b/g, '<span class="boolean">$1</span>')                    // boolean
+    .replace(/\bnull\b/g, '<span class="null">null</span>');                            // null
+}
+
+    function updateViewer() {
+      const input = editor.value;
+      try {
+        const parsed = JSON.parse(input);
+        jsonEditor.set(parsed);
+        const pretty = JSON.stringify(parsed, null, 2);
+        rawView.innerHTML = highlightJSON(pretty);
+        errorBox.style.display = 'none';
+      } catch (e) {
+        errorBox.textContent = "❌ " + e.message;
+        errorBox.style.display = 'block';
+        jsonEditor.set({});
+        rawView.textContent = '';
+      }
+    }
+
+    editor.addEventListener('input', updateViewer);
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        Object.values(views).forEach(view => view.style.display = 'none');
+        views[tab.dataset.tab].style.display = 'block';
+      });
+    });
+
+    themeToggle.addEventListener('click', () => {
+      document.body.classList.toggle('dark');
+    });
+
+    views.tree.style.display = 'block';
+    updateViewer();
+
+    const resizer = document.getElementById('resizer');
+    const leftPane = document.getElementById('editor');
+    const rightPane = document.querySelector('.viewer');
+    let isResizing = false;
+
+    resizer.addEventListener('mousedown', () => {
+      isResizing = true;
+      document.body.style.cursor = 'col-resize';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const leftWidth = e.clientX;
+      const totalWidth = document.body.clientWidth;
+      leftPane.style.width = leftWidth + 'px';
+      rightPane.style.width = (totalWidth - leftWidth - 5) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+      isResizing = false;
+      document.body.style.cursor = 'default';
+    });
+  </script>
+</body>
+</html>
